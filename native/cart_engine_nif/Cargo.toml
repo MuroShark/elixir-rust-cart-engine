@@ -1,0 +1,13 @@
+# native/cart_engine_nif/Cargo.toml
+[package]
+name = "cart_engine_nif"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cart_engine_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.38.0"
+dashmap = "6.2"

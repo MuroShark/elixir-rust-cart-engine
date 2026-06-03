@@ -1,0 +1,25 @@
+# native/Cargo.toml
+[workspace]
+members = ["cart_engine_nif"]
+resolver = "2"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+
+# Deny panicking operations (Critical for BEAM stability)
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+# Prevent out-of-bounds indexing for vectors and slices
+indexing_slicing = "deny"
+todo = "warn"
+unimplemented = "warn"
+
+# Exceptions for pedantic lints
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"

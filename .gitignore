@@ -1,0 +1,50 @@
+# =========================
+# Elixir / Mix
+# =========================
+/_build/
+/cover/
+/deps/
+/doc/
+/.mix/
+/.hex/
+*.beam
+*.ez
+telemetry_pipeline-*.tar
+erl_crash.dump
+
+# =========================
+# Rust / Cargo
+# =========================
+# Ignore Rust build directories (workspace root and within crates)
+/target/
+/native/target/
+/native/*/target/
+**/target/
+
+/native/Cargo.lock
+**/*.rs.bk
+
+# Compiled native dependencies in Elixir priv
+/priv/native/*
+
+# =========================
+# Editors and Language Servers
+# =========================
+/.elixir_ls/
+/.lexical/
+/.next_ls/
+/.idea/
+/*.iml
+/.vscode/
+!.vscode/settings.json
+
+# =========================
+# OS & Temporary Files
+# =========================
+/tmp/
+/cores
+.DS_Store
+._*
+*~
+*.swp
+*.swo

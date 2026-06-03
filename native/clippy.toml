@@ -1,0 +1,4 @@
+msrv = "1.80.0"
+avoid-breaking-exported-api = false
+disallowed-names = ["toto", "tata", "titi", "mock_variable", ".."]
+cognitive-complexity-threshold = 15
