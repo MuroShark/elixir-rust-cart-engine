@@ -1,4 +1,3 @@
-# native/Cargo.toml
 [workspace]
 members = ["cart_engine_nif"]
 resolver = "2"

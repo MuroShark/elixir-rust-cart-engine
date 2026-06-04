@@ -1,4 +1,3 @@
-# native/cart_engine_nif/Cargo.toml
 [package]
 name = "cart_engine_nif"
 version = "0.1.0"

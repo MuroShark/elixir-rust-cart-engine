@@ -1,15 +1,16 @@
-# Makefile в корне проекта
+# Makefile for CartEngine orchestration
+
 .PHONY: setup compile test lint format ci help
 
-# Команда по умолчанию
+# Default target
 help:
-	@echo "Доступные команды:"
-	@echo "  make setup     - Установка зависимостей Elixir"
-	@echo "  make compile   - Компиляция Elixir-приложения и Rust NIF"
-	@echo "  make test      - Запуск тестов для Elixir и Rust"
-	@echo "  make lint      - Статический анализ кода (Credo и Clippy)"
-	@echo "  make format    - Форматирование кода (Elixir и Rust)"
-	@echo "  make ci        - Полный цикл проверок (форматирование, линтинг, тесты)"
+	@echo "Available commands:"
+	@echo "  make setup     - Install Elixir dependencies"
+	@echo "  make compile   - Compile Elixir application and Rust NIF"
+	@echo "  make test      - Run Elixir and Rust unit tests"
+	@echo "  make lint      - Perform static analysis (Credo and Clippy)"
+	@echo "  make format    - Format Elixir and Rust source code"
+	@echo "  make ci        - Run full CI pipeline (format, lint, and test checks)"
 
 setup:
 	mix deps.get
@@ -29,7 +30,7 @@ format:
 	mix format
 	cd native && cargo fmt
 
-# Цель для CI-пайплайна (строгие проверки с падением при любой ошибке)
+# Target for Continuous Integration (CI) pipeline
 ci:
 	mix format --check-formatted
 	cd native && cargo fmt --all -- --check
