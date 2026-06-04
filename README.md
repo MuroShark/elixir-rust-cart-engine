@@ -82,7 +82,7 @@ To operate at a distributed, cloud-native scale (Kubernetes), the project is ext
                                       ▼
                        ┌─────────────────────────────┐
                        │  Rustler NIF on node1       │ (Read from local DashMap)
-                       └─────────────┬─────────────┘
+                       └──────────────┬──────────────┘
                                       │
                                       ▼
                              (Float f64 Result)
