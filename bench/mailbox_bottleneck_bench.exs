@@ -29,7 +29,7 @@ defmodule MailboxBottleneckBench do
           # Simulate a concurrent storm: randomly hit one of the 10 GenServer mailboxes
           i = :rand.uniform(10)
           cart_id = "cart_user_#{i}"
-          GenServer.call({:via, Registry, {CartEngine.CartRegistry, cart_id}}, {:calculate_cost, rules_resource})
+          GenServer.call({:via, Horde.Registry, {CartEngine.DistributedRegistry, cart_id}}, {:calculate_cost, rules_resource})
         end,
         "dashmap_concurrent_reads" => fn ->
           # Bypass mailbox completely: parallel read from DashMap directly without locks

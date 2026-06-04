@@ -31,34 +31,37 @@ The project implements the **"Endurance Stack"** pattern and solves three fundam
 
 For standard cart valuation, decoding Elixir maps (`%{item_id: ..., price: ...}`) requires expensive hash lookups inside the Erlang VM for every key.
 
-- **Solution:**
-  - Data transfer is refactored to use flat **`NifTuple`** structs, which are translated directly into contiguous C-arrays on the native level.
-  - Cart list iteration on the Rust side is executed lazily using **`ListIterator`**, completely preventing the allocation of intermediate native vectors `Vec`.
-  - The `item_id` string fields are decoded using the Zero-Copy principle with the **`&'a str`** type, referencing the binary data directly in the BEAM heap without allocating new owned `String` objects on the Rust heap [1].
+**Solution:**
+
+- Data transfer is refactored to use flat **`NifTuple`** structs, which are translated directly into contiguous C-arrays on the native level.
+- Cart list iteration on the Rust side is executed lazily using **`ListIterator`**, completely preventing the allocation of intermediate native vectors `Vec`.
+- The `item_id` string fields are decoded using the Zero-Copy principle with the **`&'a str`** type, referencing the binary data directly in the BEAM heap without allocating new owned `String` objects on the Rust heap.
 
 ### Scenario II: Optimal Combinatorial Search Tree (NP-Hard / Branch and Bound)
 
-Finding the optimal combination of discounts when **conflicting (mutually exclusive) promo codes** are present is an NP-hard problem (equivalent to the Knapsack Problem) [7].
+Finding the optimal combination of discounts when **conflicting (mutually exclusive) promo codes** are present is an NP-hard problem (equivalent to the Knapsack Problem).
 
-- **Solution:**
-  - On the Rust side, a recursive state-space tree traversal is implemented using a **Backtracking (depth-first search)** algorithm.
-  - Conflict resolution is refactored from linear vector scans to **bitwise masks (`u64`)**. Verifying a conflict for a new rule against all selected ones is executed by the CPU in **1 instruction cycle** via bitwise `AND` (`&`) [5].
-  - A **Branch and Bound (Pruning)** algorithm is introduced: at each recursion step, the maximum possible remaining discount is precalculated. If the current accumulated discount plus the remaining potential cannot beat the best-found record, the branch is instantly pruned.
-  - All operations are executed entirely on the stack with **zero dynamic memory allocations** on the Rust heap [1].
+**Solution:**
+
+- On the Rust side, a recursive state-space tree traversal is implemented using a **Backtracking (depth-first search)** algorithm.
+- Conflict resolution is refactored from linear vector scans to **bitwise masks (`u64`)**. Verifying a conflict for a new rule against all selected ones is executed by the CPU in **1 instruction cycle** via bitwise `AND` (`&`).
+- A **Branch and Bound (Pruning)** algorithm is introduced: at each recursion step, the maximum possible remaining discount is precalculated. If the current accumulated discount plus the remaining potential cannot beat the best-found record, the branch is instantly pruned.
+- All operations are executed entirely on the stack with **zero dynamic memory allocations** on the Rust heap.
 
 ### Scenario III: Bypassing the Process Mailbox Bottleneck (Lock-Free Shared Registry)
 
 When cart state is held inside a standard `GenServer`, parallel read and calculation requests queue up in the process mailbox, serializing execution and introducing queue delays.
 
-- **Solution:**
-  - Applied the **CQRS** pattern: cart mutations (writes) are routed through the `GenServer` (`CartServer`), while concurrent read and calculation queries bypass the mailbox entirely.
-  - On the Rust side, a shared concurrent resource `SharedCartRegistry` is created using the thread-safe, segmented **`DashMap`** [7]. Elixir processes read cart states directly from the `DashMap` without interacting with the Erlang process mailboxes.
+**Solution:**
+
+- Applied the **CQRS** pattern: cart mutations (writes) are routed through the `GenServer` (`CartServer`), while concurrent read and calculation queries bypass the mailbox entirely.
+- On the Rust side, a shared concurrent resource `SharedCartRegistry` is created using the thread-safe, segmented **`DashMap`**. Elixir processes read cart states directly from the `DashMap` without interacting with the Erlang process mailboxes.
 
 ---
 
 ## 3. Distributed Cluster & Data Locality
 
-To operate at a distributed, cloud-native scale (Kubernetes), the project is extended to an active-active clustered architecture with automatic node discovery and dynamic request routing [13, 15].
+To operate at a distributed, cloud-native scale (Kubernetes), the project is extended to an active-active clustered architecture with automatic node discovery and dynamic request routing.
 
 ```text
                [Cart valuation request for "cart_1" arrived at node3]
@@ -90,11 +93,11 @@ To operate at a distributed, cloud-native scale (Kubernetes), the project is ext
 
 ### Key Cluster Components:
 
-1. **`libcluster` (Node Discovery):** Automates node discovery within a private Docker bridge network, forming a connected Erlang cluster [11, 13, 17].
-2. **`Horde` (Distributed Registry & Supervisor):** A distributed registry and dynamic supervisor on top of CRDTs [16]. `Horde` guarantees that exactly one `CartServer` process is active per `cart_id` across the cluster, dynamically migrating processes on node failures [16].
+1. **`libcluster` (Node Discovery):** Automates node discovery within a private Docker bridge network, forming a connected Erlang cluster.
+2. **`Horde` (Distributed Registry & Supervisor):** A distributed registry and dynamic supervisor on top of CRDTs. `Horde` guarantees that exactly one `CartServer` process is active per `cart_id` across the cluster, dynamically migrating processes on node failures.
 3. **Distributed CQRS Router (`DistributedRouter`):**
-   - **Write path:** Transparently routes mutations to the specific node holding the target `CartServer` process [16].
-   - **Read path (RPC Optimization):** If the cart is located on a remote node, the router executes a high-performance network RPC call `:rpc.call` [11, 14, 15]. The raw, serializable list of rules `raw_rules` is sent over the network and **compiled locally on demand on the target node** [11, 15]. This prevents passing non-transferable C memory pointers (which would raise a `badarg` error) and avoids transferring raw cart data across the network [15].
+   - **Write path:** Transparently routes mutations to the specific node holding the target `CartServer` process.
+   - **Read path (RPC Optimization):** If the cart is located on a remote node, the router executes a high-performance network RPC call `:rpc.call`. The raw, serializable list of rules `raw_rules` is sent over the network and **compiled locally on demand on the target node**. This prevents passing non-transferable C memory pointers (which would raise a `badarg` error) and avoids transferring raw cart data across the network.
 
 ---
 
@@ -155,7 +158,7 @@ The project is structured as a polyglot monorepository:
 - **macOS** (Apple Silicon) or **Linux**
 - **Erlang/OTP 28+** & **Elixir 1.19.5+**
 - **Rust 1.80+** (compiler `rustc`, package manager `cargo`)
-- **OrbStack** or **Docker** (for clustered testing) [5, 13]
+- **OrbStack** or **Docker** (for clustered testing)
 
 ### 1. Local Build and QA Pipeline Validation
 
@@ -177,11 +180,11 @@ mix test
 docker compose up --build
 ```
 
-_The containers `cart_node_1`, `cart_node_2`, and `cart_node_3` will boot, establish an Erlang network, and automatically sync Horde registries [13, 16, 17, 18]._
+_The containers `cart_node_1`, `cart_node_2`, and `cart_node_3` will boot, establish an Erlang network, and automatically sync Horde registries._
 
 ### 3. Connecting to the Clustered Node (Remote Interactive Console)
 
-You can attach an interactive Elixir shell (`iex`) directly to the running node from your host terminal [11, 13]:
+You can attach an interactive Elixir shell (`iex`) directly to the running node from your host terminal:
 
 ```bash
 docker exec -it cart_node_1 bin/cart_engine remote
@@ -231,19 +234,20 @@ rust_nif_valuation               16 B - 0.07x memory usage -208 B
 
 #### Test 2: Realistic Promo Database (Worst-Case for Elixir, 100 Rules)
 
-The active rules are appended to the very end of a 100-rule list. Elixir must perform a linear scan of $O(N \times M)$ [7].
+The active rules are appended to the very end of a 100-rule list. Elixir must perform a linear scan of $O(N \times M)$.
 
 ```text
 ##### With input Large Cart (150 items) #####
 Name                            ips        average  deviation         median         99th %
-rust_nif_valuation         143.32 K        6.98 μs    ±30.44%        6.83 μs        8.25 μs
-elixir_pure_valuation        8.63 K      115.85 μs     ±8.42%      115.42 μs      159.58 μs
+rust_nif_valuation         191.00 K        5.24 μs    ±23.90%        5.13 μs        7.08 μs
+elixir_pure_valuation        9.19 K      108.86 μs     ±6.47%      107.88 μs      134.56 μs
 
 Comparison:
-rust_nif_valuation         143.32 K
-elixir_pure_valuation        8.63 K - 16.60x slower +108.88 μs
+rust_nif_valuation         191.00 K
+elixir_pure_valuation        9.19 K - 20.79x slower +103.63 μs
 
 Memory usage statistics:
+
 Name                     Memory usage
 rust_nif_valuation          0.0156 KB
 elixir_pure_valuation         5.88 KB - 376.50x memory usage +5.87 KB
@@ -251,8 +255,8 @@ elixir_pure_valuation         5.88 KB - 376.50x memory usage +5.87 KB
 
 #### Benchmark I Systems Analysis:
 
-- **NIF Transition Costs:** The 1.6 μs gap on small inputs highlights the baseline context-switch overhead of entering the C boundary from the BEAM VM [5]. For trivial calculations, Elixir's fast local JIT-execution wins [3].
-- **Algorithmic Scaling:** On 150 items with 100 rules, Elixir degrades **26.6x** (to `115.85 μs`) due to the $O(N \times M)$ list-traversal [5]. Rust's `HashMap` maintains constant-time lookup $O(1)$, executing at `~7 μs` (**16.6x faster than Elixir**) [7].
+- **NIF Transition Costs:** The 1.6 μs gap on small inputs highlights the baseline context-switch overhead of entering the C boundary from the BEAM VM. For trivial calculations, Elixir's fast local JIT-execution wins.
+- **Algorithmic Scaling:** On 150 items with 100 rules, Elixir degrades **24.4x** (to `108.86 μs`) due to the $O(N \times M)$ list-traversal. Rust's `HashMap` maintains constant-time lookup $O(1)$, executing at `~5.24 μs` (**20.79x faster than Elixir**).
 
 ---
 
@@ -262,14 +266,15 @@ A recursive depth-first search (DFS) over a state-space tree of 15 applicable ru
 
 ```text
 Name                                ips        average  deviation         median         99th %
-rust_nif_combinatorial         200.87 K        4.98 μs   ±240.13%        4.75 μs        9.29 μs
-elixir_pure_combinatorial        3.38 K      295.79 μs     ±6.21%      293.04 μs      374.00 μs
+rust_nif_combinatorial         238.52 K        4.19 μs    ±56.04%        4.04 μs        8.25 μs
+elixir_pure_combinatorial        3.32 K      300.76 μs     ±6.89%      299.79 μs      371.84 μs
 
 Comparison:
-rust_nif_combinatorial         200.87 K
-elixir_pure_combinatorial        3.38 K - 59.42x slower +290.81 μs
+rust_nif_combinatorial         238.52 K
+elixir_pure_combinatorial        3.32 K - 71.74x slower +296.57 μs
 
 Memory usage statistics:
+
 Name                         Memory usage
 rust_nif_combinatorial          0.0156 KB
 elixir_pure_combinatorial       316.62 KB - 20263.50x memory usage +316.60 KB
@@ -277,38 +282,43 @@ elixir_pure_combinatorial       316.62 KB - 20263.50x memory usage +316.60 KB
 
 #### Benchmark II Systems Analysis:
 
-For heavy CPU-bound combinatorial logic (backtracking over floats), Rust outperforms Elixir **59.42x** on raw speed. Furthermore, Elixir allocates **316.62 KB** of temporary heap memory _per calculation_ to maintain the recursive stack states on the BEAM heap [1]. Rust NIF, utilizing stack-allocated `u64` bitmasks and Branch and Bound pruning, allocates exactly **16 bytes** [1].
+For heavy CPU-bound combinatorial logic (backtracking over floats), Rust outperforms Elixir **71.74x** on raw speed. Furthermore, Elixir allocates **316.62 KB** of temporary heap memory _per calculation_ to maintain the recursive stack states on the BEAM heap. Rust NIF, utilizing stack-allocated `u64` bitmasks and Branch and Bound pruning, allocates exactly **16 bytes**.
 
 ---
 
 ### BENCHMARK III: Mailbox Bottleneck Bypass (10 Parallel Processes)
 
-Simulates 10 concurrent Erlang processes querying the cart price simultaneously. Compares sequential GenServer mailbox queuing against direct, lock-free concurrent reads from the native `DashMap` [7].
+Simulates 10 concurrent Erlang processes querying the cart price simultaneously. Compares sequential GenServer mailbox queuing against direct, lock-free concurrent reads from the native `DashMap`.
 
 ```text
 Name                                 ips        average  deviation         median         99th %
-dashmap_concurrent_reads        243.81 K        4.10 μs   ±715.22%        2.50 μs       10.96 μs
-genserver_serialized_reads       56.19 K       17.80 μs    ±67.35%       15.75 μs       46.21 μs
+dashmap_concurrent_reads        234.39 K        4.27 μs   ±737.51%        2.58 μs       12.21 μs
+genserver_serialized_reads       49.18 K       20.33 μs    ±60.46%       17.75 μs       57.96 μs
 
 Comparison:
-dashmap_concurrent_reads        243.81 K
-genserver_serialized_reads       56.19 K - 4.34x slower +13.69 μs
+dashmap_concurrent_reads        234.39 K
+genserver_serialized_reads       49.18 K - 4.77x slower +16.07 μs
 
 Memory usage statistics:
+
 Name                               average  deviation         median         99th %
-dashmap_concurrent_reads             416 B     ±0.00%          416 B          416 B
-genserver_serialized_reads        842.93 B     ±1.94%          840 B          864 B
+dashmap_concurrent_reads           0.41 KB     ±0.00%        0.41 KB        0.41 KB
+genserver_serialized_reads         1.07 KB     ±2.08%        1.07 KB        1.09 KB
+
+Comparison:
+dashmap_concurrent_reads           0.41 KB
+genserver_serialized_reads         1.07 KB - 2.64x memory usage +0.66 KB
 ```
 
 #### Benchmark III Systems Analysis:
 
 - **Removing `DirtyCpu`:** Removing the `schedule = "DirtyCpu"` flag for this ultra-fast sub-millisecond task saved `~15 μs` of OS-thread context switching overhead, running the NIF directly on Elixir's native scheduler threads.
-- **Lock Sharding:** Distributing the queries across independent keys (`cart_user_1` to `cart_user_10`) allowed `DashMap`'s segmented locking structure to scale linearly across all 10 cores of the Apple M5, completely avoiding CPU **Cache Line Bouncing** and lock contention [5, 7, 10].
-- **Mailbox Bypass:** Bypassing process context switches and Erlang term-copying to the GenServer heap yielded a **4.34x (334%) throughput increase** over the GenServer mailbox path [7]. Median latency dropped to a record **`2.50 μs`** [7].
+- **Lock Sharding:** Distributing the queries across independent keys (`cart_user_1` to `cart_user_10`) allowed `DashMap`'s segmented locking structure to scale linearly across all 10 cores of the Apple M5, completely avoiding CPU **Cache Line Bouncing** and lock contention.
+- **Mailbox Bypass:** Bypassing process context switches and Erlang term-copying to the GenServer heap yielded a **4.77x (377%) throughput increase** over the GenServer mailbox path. Median latency dropped to a record **`2.58 μs`**.
 
 #### Preventing Garbage Collection Pressure (p99 Tail Latency):
 
 At a peak scale of **100,000 RPS** (requests per second):
 
 - **In Elixir:** The system generates **~588 MB of temporary heap allocations per second** (5.88 KB × 100k). This triggers continuous Garbage Collection sweeps across all scheduler threads, introducing latency spikes (jitter) at the p99/p99.9 tail percentiles.
-- **In Rust (NIF):** The calculations generate **0 bytes of garbage** on the BEAM heap [1]. The response times remain flat and highly predictable under sustained peak traffic.
+- **In Rust (NIF):** The calculations generate **0 bytes of garbage** on the BEAM heap. The response times remain flat and highly predictable under sustained peak traffic.

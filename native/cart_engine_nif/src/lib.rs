@@ -20,6 +20,17 @@ struct OwnedItem {
     price: f64,
 }
 
+// Simplifies mapping from Item to OwnedItem via the From trait
+impl<'a> From<&Item<'a>> for OwnedItem {
+    fn from(item: &Item<'a>) -> Self {
+        OwnedItem {
+            item_id: item.item_id.to_string(),
+            qty: item.qty,
+            price: item.price,
+        }
+    }
+}
+
 #[derive(NifTuple, Clone)]
 struct Rule {
     item_id: String,
@@ -45,7 +56,6 @@ struct SharedCartRegistry {
 #[rustler::resource_impl]
 impl Resource for SharedCartRegistry {}
 
-// Manual implementation of safety marker traits to cross the catch_unwind boundary in Rustler [9]
 impl std::panic::RefUnwindSafe for SharedCartRegistry {}
 impl std::panic::UnwindSafe for SharedCartRegistry {}
 
@@ -69,10 +79,25 @@ struct CombinatorialRules {
 #[rustler::resource_impl]
 impl Resource for CombinatorialRules {}
 
-struct ActiveRule {
-    rule_id: i32,
+// Holds a reference to the original rule instead of cloning it
+struct ActiveRule<'a> {
+    rule: &'a CombinatorialRule,
     discount_value: f64,
     conflict_mask: u64,
+}
+
+// =========================================================================
+// HELPERS
+// =========================================================================
+
+// Unified helper to calculate discounted item price
+fn calculate_item_price(qty: i32, price: f64, rule: Option<&Rule>) -> f64 {
+    let discount_pct = rule
+        .filter(|r| qty >= r.min_qty)
+        .map(|r| r.discount_pct)
+        .unwrap_or(0);
+    let discount = f64::from(discount_pct) / 100.0;
+    price * f64::from(qty) * (1.0 - discount)
 }
 
 // =========================================================================
@@ -92,15 +117,7 @@ fn update_cart<'a>(
     cart_id: String,
     cart: Vec<Item<'a>>,
 ) -> Result<bool, Error> {
-    let owned_cart: Vec<OwnedItem> = cart
-        .iter()
-        .map(|item| OwnedItem {
-            item_id: item.item_id.to_string(),
-            qty: item.qty,
-            price: item.price,
-        })
-        .collect();
-
+    let owned_cart = cart.iter().map(OwnedItem::from).collect();
     resource.carts.insert(cart_id, owned_cart);
     Ok(true)
 }
@@ -112,27 +129,12 @@ fn evaluate_shared_cart(
     rules_resource: ResourceArc<PromotionRules>,
 ) -> Result<f64, Error> {
     let mut total = 0.0;
-
     if let Some(cart_ref) = registry.carts.get(&cart_id) {
-        let cart = cart_ref.value();
-
-        for item in cart {
-            let matched_rule = rules_resource.rules.get(&item.item_id);
-
-            if let Some(rule) = matched_rule {
-                if item.qty >= rule.min_qty {
-                    let discount = f64::from(rule.discount_pct) / 100.0;
-                    let discounted_price = item.price * (1.0 - discount);
-                    total += discounted_price * f64::from(item.qty);
-                } else {
-                    total += item.price * f64::from(item.qty);
-                }
-            } else {
-                total += item.price * f64::from(item.qty);
-            }
+        for item in cart_ref.value() {
+            let rule = rules_resource.rules.get(&item.item_id);
+            total += calculate_item_price(item.qty, item.price, rule);
         }
     }
-
     Ok(total)
 }
 
@@ -142,11 +144,8 @@ fn evaluate_shared_cart(
 
 #[rustler::nif]
 fn compile_rules(rules: Vec<Rule>) -> ResourceArc<PromotionRules> {
-    let mut rules_map = HashMap::with_capacity(rules.len());
-    for rule in rules {
-        rules_map.insert(rule.item_id.clone(), rule);
-    }
-    ResourceArc::new(PromotionRules { rules: rules_map })
+    let rules = rules.into_iter().map(|r| (r.item_id.clone(), r)).collect();
+    ResourceArc::new(PromotionRules { rules })
 }
 
 #[rustler::nif]
@@ -156,24 +155,11 @@ fn evaluate_cart<'a>(
 ) -> Result<f64, Error> {
     let mut total = 0.0;
     let list_iterator = cart_term.decode::<ListIterator<'a>>()?;
-
     for term in list_iterator {
         let item = term.decode::<Item<'a>>()?;
-        let matched_rule = resource.rules.get(item.item_id);
-
-        if let Some(rule) = matched_rule {
-            if item.qty >= rule.min_qty {
-                let discount = f64::from(rule.discount_pct) / 100.0;
-                let discounted_price = item.price * (1.0 - discount);
-                total += discounted_price * f64::from(item.qty);
-            } else {
-                total += item.price * f64::from(item.qty);
-            }
-        } else {
-            total += item.price * f64::from(item.qty);
-        }
+        let rule = resource.rules.get(item.item_id);
+        total += calculate_item_price(item.qty, item.price, rule);
     }
-
     Ok(total)
 }
 
@@ -192,67 +178,51 @@ fn evaluate_combinatorial_cart<'a>(
     resource: ResourceArc<CombinatorialRules>,
 ) -> Result<f64, Error> {
     let list_iterator = cart_term.decode::<ListIterator<'a>>()?;
-    let mut cart = Vec::new();
-    for term in list_iterator {
-        cart.push(term.decode::<Item<'a>>()?);
-    }
+    let cart: Vec<Item<'a>> = list_iterator
+        .map(|term| term.decode())
+        .collect::<Result<_, _>>()?;
 
-    let mut applicable_rules = Vec::new();
+    // Find rules and calculate discount values in a single pass without cloning
+    let mut active_rules = Vec::new();
     for rule in &resource.rules {
-        let applies = cart
+        if let Some(item) = cart
             .iter()
-            .any(|item| item.item_id == rule.item_id && item.qty >= rule.min_qty);
-        if applies {
-            applicable_rules.push(rule.clone());
-        }
-    }
-
-    let mut active_rules = Vec::with_capacity(applicable_rules.len());
-    for rule in &applicable_rules {
-        let matched_item = cart.iter().find(|item| item.item_id == rule.item_id);
-        if let Some(item) = matched_item {
+            .find(|item| item.item_id == rule.item_id && item.qty >= rule.min_qty)
+        {
             let discount = f64::from(rule.discount_pct) / 100.0;
             let discount_value = item.price * discount * f64::from(item.qty);
             active_rules.push(ActiveRule {
-                rule_id: rule.rule_id,
+                rule,
                 discount_value,
                 conflict_mask: 0,
             });
         }
     }
 
+    // Construct conflict masks without redundant Option checks
     let n = active_rules.len();
     for i in 0..n {
         let mut mask = 0u64;
-        if let Some(orig_rule) = applicable_rules.get(i) {
-            for j in 0..n {
-                if i != j {
-                    if let (Some(other_active), Some(other_orig)) =
-                        (active_rules.get(j), applicable_rules.get(j))
-                    {
-                        if orig_rule.conflicting_rules.contains(&other_active.rule_id)
-                            || orig_rule.item_id == other_orig.item_id
-                        {
-                            mask |= 1 << j;
-                        }
-                    }
-                }
+        let active_i = &active_rules[i];
+        for (j, active_j) in active_rules.iter().enumerate() {
+            if i != j
+                && (active_i
+                    .rule
+                    .conflicting_rules
+                    .contains(&active_j.rule.rule_id)
+                    || active_i.rule.item_id == active_j.rule.item_id)
+            {
+                mask |= 1 << j;
             }
         }
-        if let Some(active) = active_rules.get_mut(i) {
-            active.conflict_mask = mask;
-        }
+        active_rules[i].conflict_mask = mask;
     }
 
     let mut remaining_discounts = vec![0.0; n + 1];
     let mut accum = 0.0;
     for i in (0..n).rev() {
-        if let Some(active) = active_rules.get(i) {
-            accum += active.discount_value;
-        }
-        if let Some(val) = remaining_discounts.get_mut(i) {
-            *val = accum;
-        }
+        accum += active_rules[i].discount_value;
+        remaining_discounts[i] = accum;
     }
 
     let mut best_discount = 0.0;
@@ -276,15 +246,13 @@ fn find_max_discount(
     step: usize,
     selected_mask: u64,
     current_discount: f64,
-    active_rules: &[ActiveRule],
+    active_rules: &[ActiveRule<'_>],
     remaining_discounts: &[f64],
     best_discount: &mut f64,
 ) {
-    if let (Some(&rem_val), Some(best_val)) = (remaining_discounts.get(step), Some(*best_discount))
-    {
-        if current_discount + rem_val <= best_val {
-            return;
-        }
+    // Safe access without Option checks
+    if current_discount + remaining_discounts[step] <= *best_discount {
+        return;
     }
 
     if step == active_rules.len() {
@@ -294,30 +262,26 @@ fn find_max_discount(
         return;
     }
 
-    if let Some(rule) = active_rules.get(step) {
-        let has_conflict = (selected_mask & rule.conflict_mask) != 0;
-
-        if !has_conflict {
-            let next_mask = selected_mask | (1 << step);
-            find_max_discount(
-                step + 1,
-                next_mask,
-                current_discount + rule.discount_value,
-                active_rules,
-                remaining_discounts,
-                best_discount,
-            );
-        }
-
+    let rule = &active_rules[step];
+    if (selected_mask & rule.conflict_mask) == 0 {
         find_max_discount(
             step + 1,
-            selected_mask,
-            current_discount,
+            selected_mask | (1 << step),
+            current_discount + rule.discount_value,
             active_rules,
             remaining_discounts,
             best_discount,
         );
     }
+
+    find_max_discount(
+        step + 1,
+        selected_mask,
+        current_discount,
+        active_rules,
+        remaining_discounts,
+        best_discount,
+    );
 }
 
 rustler::init!("Elixir.CartEngine.RustBridge");

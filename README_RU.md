@@ -77,7 +77,7 @@
                                       ▼
                        ┌─────────────────────────────┐
                        │  Rustler NIF на node1       │ (Чтение из локального DashMap)
-                       └──────────────┬──────────────┘
+                       └─────────────┬─────────────┘
                                       │
                                       ▼
                              (Результат f64)
@@ -112,7 +112,7 @@
 - **Запрет паникующих макросов:** `unwrap_used = "deny"`, `expect_used = "deny"`, `panic = "deny"`. Любая обработка ошибок возвращает `Result<T, E>` в Elixir.
 - **Запрет явного разыменования NIF-ресурсов:** `clippy::explicit-auto-deref` — гарантирует использование встроенного механизма безопасного автоматического разыменования умных указателей `ResourceArc`.
 - **Защита от сбоя тредов:** `indexing_slicing = "deny"` — предотвращает выход за границы векторов и слайсов (out-of-bounds).
-- **Прохождение panic-границы:** Для структуры `SharedCartRegistry` вручную имплементированы маркерные типажи `RefUnwindSafe` и `UnwindSafe` для безопасной передачи ресурса через границу `catch_unwind` в Rustler [9].
+- **Прохождение panic-границы:** Для структуры `SharedCartRegistry` вручную имплементированы маркерные типажи `RefUnwindSafe` и `UnwindSafe` для безопасной передачи ресурса через границу `catch_unwind` в Rustler.
 
 ---
 
@@ -220,14 +220,15 @@ rust_nif_valuation          0.0156 KB - 0.00x memory usage -5.86719 KB
 ```text
 ##### With input Large Cart (150 items) #####
 Name                            ips        average  deviation         median         99th %
-rust_nif_valuation         143.32 K        6.98 μs    ±30.44%        6.83 μs        8.25 μs
-elixir_pure_valuation        8.63 K      115.85 μs     ±8.42%      115.42 μs      159.58 μs
+rust_nif_valuation         191.00 K        5.24 μs    ±23.90%        5.13 μs        7.08 μs
+elixir_pure_valuation        9.19 K      108.86 μs     ±6.47%      107.88 μs      134.56 μs
 
-Comparison:
-rust_nif_valuation         143.32 K
-elixir_pure_valuation        8.63 K - 16.60x slower +108.88 μs
+Comparison: 
+rust_nif_valuation         191.00 K
+elixir_pure_valuation        9.19 K - 20.79x slower +103.63 μs
 
 Memory usage statistics:
+
 Name                     Memory usage
 rust_nif_valuation          0.0156 KB
 elixir_pure_valuation         5.88 KB - 376.50x memory usage +5.87 KB
@@ -236,7 +237,7 @@ elixir_pure_valuation         5.88 KB - 376.50x memory usage +5.87 KB
 #### Разбор результатов бенчмарка I:
 
 - В Тесте 1 на малых объемах Elixir работает быстрее из-за накладных расходов на вызов NIF (Context Switch в ОС занимает `~1.6 мкс`).
-- В Тесте 2 при росте базы правил до 100 Elixir начинает тратить время на линейный перебор списка в памяти, замедляясь в **26.6 раз** (до `115.85 μs`). В это же время Rust `HashMap` сохраняет стабильную константную сложность $O(1)$, выполняя расчет за прежние **`~7 μs`** (производительность выше в **16.6 раз**).
+- В Тесте 2 при росте базы правил до 100 Elixir начинает тратить время на линейный перебор списка в памяти, замедляясь до `108.86 μs`. В это же время Rust `HashMap` сохраняет стабильную константную сложность $O(1)$, выполняя расчет за прежние **`~5.24 μs`** (производительность выше в **20.79 раз**).
 
 ---
 
@@ -246,14 +247,15 @@ elixir_pure_valuation         5.88 KB - 376.50x memory usage +5.87 KB
 
 ```text
 Name                                ips        average  deviation         median         99th %
-rust_nif_combinatorial         200.87 K        4.98 μs   ±240.13%        4.75 μs        9.29 μs
-elixir_pure_combinatorial        3.38 K      295.79 μs     ±6.21%      293.04 μs      374.00 μs
+rust_nif_combinatorial         238.52 K        4.19 μs    ±56.04%        4.04 μs        8.25 μs
+elixir_pure_combinatorial        3.32 K      300.76 μs     ±6.89%      299.79 μs      371.84 μs
 
-Comparison:
-rust_nif_combinatorial         200.87 K
-elixir_pure_combinatorial        3.38 K - 59.42x slower +290.81 μs
+Comparison: 
+rust_nif_combinatorial         238.52 K
+elixir_pure_combinatorial        3.32 K - 71.74x slower +296.57 μs
 
 Memory usage statistics:
+
 Name                         Memory usage
 rust_nif_combinatorial          0.0156 KB
 elixir_pure_combinatorial       316.62 KB - 20263.50x memory usage +316.60 KB
@@ -261,7 +263,7 @@ elixir_pure_combinatorial       316.62 KB - 20263.50x memory usage +316.60 KB
 
 #### Разбор результатов бенчмарка II:
 
-На тяжелых вычислительных задачах (рекурсивный обход дерева с плавающей запятой) Rust опережает Elixir **в 59.42 раза** по чистой скорости. При этом чистая Elixir-реализация на каждый вызов вынуждена выделять **316.62 КБ** временной памяти под рекурсивные списки на куче BEAM. Rust NIF, за счет побитовых масок конфликтов и алгоритма отсечения Branch and Bound, расходует ровно **16 байт**.
+На тяжелых вычислительных задачах (рекурсивный обход дерева с плавающей запятой) Rust опережает Elixir **в 71.74 раза** по чистой скорости. При этом чистая Elixir-реализация на каждый вызов вынуждена выделять **316.62 КБ** временной памяти под рекурсивные списки на куче BEAM. Rust NIF, за счет побитовых масок конфликтов и алгоритма отсечения Branch and Bound, расходует ровно **16 байт**.
 
 ---
 
@@ -271,22 +273,27 @@ elixir_pure_combinatorial       316.62 KB - 20263.50x memory usage +316.60 KB
 
 ```text
 Name                                 ips        average  deviation         median         99th %
-dashmap_concurrent_reads        243.81 K        4.10 μs   ±715.22%        2.50 μs       10.96 μs
-genserver_serialized_reads       56.19 K       17.80 μs    ±67.35%       15.75 μs       46.21 μs
+dashmap_concurrent_reads        234.39 K        4.27 μs   ±737.51%        2.58 μs       12.21 μs
+genserver_serialized_reads       49.18 K       20.33 μs    ±60.46%       17.75 μs       57.96 μs
 
-Comparison:
-dashmap_concurrent_reads        243.81 K
-genserver_serialized_reads       56.19 K - 4.34x slower +13.69 μs
+Comparison: 
+dashmap_concurrent_reads        234.39 K
+genserver_serialized_reads       49.18 K - 4.77x slower +16.07 μs
 
 Memory usage statistics:
+
 Name                               average  deviation         median         99th %
-dashmap_concurrent_reads             416 B     ±0.00%          416 B          416 B
-genserver_serialized_reads        842.93 B     ±1.94%          840 B          864 B
+dashmap_concurrent_reads           0.41 KB     ±0.00%        0.41 KB        0.41 KB
+genserver_serialized_reads         1.07 KB     ±2.08%        1.07 KB        1.09 KB
+
+Comparison: 
+dashmap_concurrent_reads           0.41 KB
+genserver_serialized_reads         1.07 KB - 2.64x memory usage +0.66 KB
 ```
 
 #### Разбор результатов бенчмарка III:
 
-Устранение флага `schedule = "DirtyCpu"` (который добавлял `~15 мкс` на переключение потоков ОС для сверхбыстрых задач) и распределение запросов по сегментам `DashMap` (исключившее Cache Line Bouncing процессора) позволило нативному конкурентному чтению показать прирост производительности **в 4.34 раза (на 334%) по сравнению с GenServer**. Медианное время расчета составило рекордные **`2.50 μs`**.
+Устранение флага `schedule = "DirtyCpu"` (который добавлял `~15 мкс` на переключение потоков ОС для сверхбыстрых задач) и распределение запросов по сегментам `DashMap` (исключившее Cache Line Bouncing процессора) позволило нативному конкурентному чтению показать прирост производительности **в 4.77 раза (на 377%) по сравнению с GenServer**. Медианное время расчета составило рекордные **`2.58 μs`**.
 
 #### Системный вывод по предотвращению GC-давления (Latency p99):
 
