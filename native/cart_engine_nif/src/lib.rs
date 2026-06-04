@@ -1,4 +1,3 @@
-// native/cart_engine_nif/src/lib.rs
 use dashmap::DashMap;
 use rustler::{Error, ListIterator, NifTuple, Resource, ResourceArc, Term};
 use std::collections::HashMap;
